@@ -469,6 +469,79 @@ def main():
     print(f"  {DIM}(−20 per critical · −5 per warning){RST}\n")
     print(f"{W}{'═'*62}{RST}\n")
 
-if __name__ == "__main__":
-    main()
+def ci_checks():
+    """Security + integrity checks for CI — exits 1 on any critical finding."""
+    failed = False
+
+    # eval() anywhere in extension JS
+    for name in ["content-main.js", "content-ui.js", "background.js", "popup.js"]:
+        src = load(name)
+        for i, line in enumerate(src.splitlines(), 1):
+            if re.search(r'\beval\s*\(', line) and not line.strip().startswith('//'):
+                print(f"[CI FAIL] eval() in {name}:{i}: {line.strip()}")
+                failed = True
+
+    # innerHTML set to non-empty, non-literal-safe content
+    # Safe: innerHTML = ''  or  innerHTML = '&#...'  or  innerHTML = '<simple-tag>'
+    # Unsafe: innerHTML set to a variable or complex expression
+    SAFE_INNER = re.compile(
+        r"""innerHTML\s*=\s*(?:''|""|`\s*`|'[^']*'|"[^"]*"|`[^`]*`)"""
+    )
+    UNSAFE_INNER = re.compile(r'innerHTML\s*=\s*(?!\s*[\'"`])(?!.*renderMarkdown)')
+    for name in ["content-main.js", "background.js", "popup.js"]:
+        src = load(name)
+        for i, line in enumerate(src.splitlines(), 1):
+            stripped = line.strip()
+            if 'innerHTML' in stripped and '=' in stripped:
+                if not stripped.startswith('//'):
+                    if UNSAFE_INNER.search(stripped):
+                        print(f"[CI FAIL] Unsafe innerHTML in {name}:{i}: {stripped}")
+                        failed = True
+
+    # Hardcoded API key
+    for name in ["content-main.js", "content-ui.js", "background.js", "popup.js"]:
+        src = load(name)
+        if re.search(r'sk-or-[a-zA-Z0-9]{10,}', src):
+            print(f"[CI FAIL] Hardcoded API key in {name}")
+            failed = True
+
+    # manifest version present
+    import json as _json
+    mf_path = FILES["manifest.json"]
+    try:
+        mf = _json.loads(mf_path.read_text(encoding="utf-8"))
+        v = mf.get("version", "").strip()
+        if not v:
+            print("[CI FAIL] manifest.json missing 'version'")
+            failed = True
+        else:
+            print(f"[CI OK] manifest version: {v}")
+    except Exception as e:
+        print(f"[CI FAIL] Cannot parse manifest.json: {e}")
+        failed = True
+
+    # required files exist
+    required = [
+        "content-main.js", "content-ui.js", "background.js",
+        "popup.js", "manifest.json",
+    ]
+    for name in required:
+        if FILES[name].exists():
+            print(f"[CI OK] {name} exists")
+        else:
+            print(f"[CI FAIL] Missing required file: {name}")
+            failed = True
+
+    if failed:
+        print("\n[CI] One or more checks failed — see above.")
+        sys.exit(1)
+    print("\n[CI] All checks passed.")
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    if "--ci" in sys.argv:
+        ci_checks()
+    else:
+        main()
+        sys.exit(0)

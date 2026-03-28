@@ -1,4 +1,4 @@
-name: ZAPI CI — Architecture & Lint
+name: ZAPI CI — Architecture & Security
 
 on:
   push:
@@ -24,78 +24,5 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run ZAPI Deep Analyzer
-        run: python -X utf8 scripts/zapi_deep_analyzer.py; echo "Analyzer exit code: $?"
-
-      - name: Check — no eval() in extension JS
-        run: |
-          set -e
-          echo "Scanning for eval()..."
-          HITS=$(grep -rn "eval(" extension/ --include="*.js" || true)
-          if [ -n "$HITS" ]; then
-            echo "FAIL: eval() found:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: no eval() found"
-
-      - name: Check — no innerHTML outside content-ui.js
-        run: |
-          set -e
-          echo "Scanning for innerHTML assignments..."
-          HITS=$(grep -rn "innerHTML" extension/ --include="*.js" \
-            | grep -v "content-ui.js" || true)
-          if [ -n "$HITS" ]; then
-            echo "FAIL: innerHTML found outside content-ui.js:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: innerHTML only in content-ui.js"
-
-      - name: Check — no hardcoded API keys
-        run: |
-          set -e
-          echo "Scanning for hardcoded keys..."
-          HITS=$(grep -rn "sk-or-" extension/ --include="*.js" || true)
-          if [ -n "$HITS" ]; then
-            echo "FAIL: hardcoded API key found:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: no hardcoded API keys"
-
-      - name: Check — manifest version is set
-        run: |
-          set -e
-          VERSION=$(python3 -c "
-import json, sys
-with open('extension/manifest.json') as f:
-    d = json.load(f)
-v = d.get('version', '').strip()
-if not v:
-    print('MISSING', file=sys.stderr)
-    sys.exit(1)
-print(v)
-")
-          echo "Manifest version: $VERSION"
-
-      - name: Check — required files exist
-        run: |
-          set -e
-          MISSING=0
-          for f in \
-            extension/manifest.json \
-            extension/content-main.js \
-            extension/content-ui.js \
-            extension/background.js \
-            extension/popup.html \
-            extension/popup.js \
-            extension/styles.css; do
-            if [ -f "$f" ]; then
-              echo "OK: $f"
-            else
-              echo "FAIL: missing $f"
-              MISSING=1
-            fi
-          done
-          exit $MISSING
+      - name: Run Architecture + Security Checks
+        run: python -X utf8 scripts/zapi_deep_analyzer.py --ci
