@@ -20,76 +20,23 @@ It reads your live circuit (code files + `diagram.json`) automatically, validate
 
 ## How it works
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {
-  'primaryColor': '#0d1b33',
-  'primaryTextColor': '#a8c0ff',
-  'primaryBorderColor': '#7b9fff',
-  'lineColor': '#7b9fff',
-  'secondaryColor': '#0f3460',
-  'background': '#0a0f1e',
-  'mainBkg': '#0d1b33',
-  'nodeBorder': '#7b9fff',
-  'clusterBkg': '#0a0f1e',
-  'clusterBorder': '#2a3a6a',
-  'titleColor': '#7b9fff',
-  'edgeLabelBackground': '#0a0f1e',
-  'fontFamily': 'monospace',
-  'fontSize': '13px'
-}}}%%
-
-flowchart TD
-    subgraph SRC ["  DATA SOURCES  "]
-        direction LR
-        S1["Monaco\ngetModels()"]
-        S2["RSC Stream\n__next_f"]
-        S3["fetch()\ninterceptor"]
-        S4["ZIP API\ndiagram API"]
-    end
-
-    subgraph MAIN ["  content-main.js · MAIN WORLD  "]
-        direction TB
-        M1["extractEditors()"]
-        M2["extractFromRSCChunk()"]
-        M3["hookFetch()"]
-        M4["extractFromAPI()"]
-        M5[["mergeFile()\ncommitCache()"]]
-    end
-
-    subgraph BRIDGE ["  DOM BRIDGE  "]
-        BR[("#__zapi_bridge__\ndata-zapi = JSON")]
-    end
-
-    subgraph ISO ["  content-ui.js · ISOLATED WORLD  "]
-        direction TB
-        U1["readBridge()"]
-        U2["extractCircuitContext()"]
-        U3[["Chat Bubble\n+ File Toggles"]]
-        U4(["sendMessage()"])
-    end
-
-    subgraph BG ["  background.js · SERVICE WORKER  "]
-        direction TB
-        B1["slimDiagram()"]
-        B2["validateCircuit()"]
-        B3[["buildContext()\n+ SYSTEM_PROMPT"]]
-        B4(["callOpenRouter()"])
-    end
-
-    OR(["☁  openrouter.ai\n/v1/chat/completions"])
-
-    S1 --> M1
-    S2 --> M2
-    S3 --> M3
-    S4 --> M4
-    M1 & M2 & M3 & M4 --> M5
-    M5 --> BR
-    BR --> U1 --> U2 --> U3 --> U4
-    U4 -->|"chrome.runtime\ntype: ASK"| B1
-    B1 --> B2 --> B3 --> B4
-    B4 -->|"POST Bearer"| OR
-    OR -.->|"{ answer }"| B4
-    B4 -.->|"response"| U3
+```
++-------------------+     +-------------------+     +-------------------+
+|  content-main.js  |     |   content-ui.js   |     |   background.js   |
+|   [ MAIN WORLD ]  |     | [ISOLATED WORLD]  |     | [SERVICE WORKER]  |
+|                   |     |                   |     |                   |
+|  Monaco           |     |  readBridge()     |     |  slimDiagram()    |
+|  RSC stream       |     |  Chat Bubble      |     |  validateCircuit()|
+|  fetch intercept  |     |  File Toggles     |     |  buildContext()   |
+|  ZIP + diag API   |     |  sendMessage()    |     |  callOpenRouter() |
++--------+----------+     +----+---------+----+     +--------+----------+
+         |                     |         ^                    |
+         |  setAttribute()     |         |  { answer }        |  POST
+         v                     v         |                    v
+    +----+--------------------+--+       |         +----------+----------+
+    |    #__zapi_bridge__        +-------+         |  openrouter.ai      |
+    |    data-zapi = JSON        |                 |  /v1/chat/complet.. |
+    +----------------------------+                 +---------------------+
 ```
 
 ---
