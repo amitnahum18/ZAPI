@@ -21,19 +21,54 @@ It reads your live circuit (code files + `diagram.json`) automatically, validate
 ## How it works
 
 ```mermaid
-flowchart LR
-    W(["🔌 Wokwi\nMonaco + APIs"])
-    B(["🌉 DOM Bridge\n#__zapi_bridge__"])
-    U(["💬 Chat UI\ncontent-ui.js"])
-    BG(["⚙️ background.js\nvalidate + build"])
-    OR(["🤖 OpenRouter\nAI Model"])
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#0f3460',
+  'primaryTextColor': '#e0e0ff',
+  'primaryBorderColor': '#7b9fff',
+  'lineColor': '#7b9fff',
+  'secondaryColor': '#16213e',
+  'tertiaryColor': '#1a1a2e',
+  'background': '#1a1a2e',
+  'mainBkg': '#0f3460',
+  'nodeBorder': '#7b9fff',
+  'clusterBkg': '#16213e',
+  'titleColor': '#7b9fff',
+  'edgeLabelBackground': '#1a1a2e',
+  'fontFamily': 'monospace'
+}}}%%
 
-    W -->|"files + diagram"| B
-    B -->|"readBridge()"| U
-    U -->|"type: ASK"| BG
-    BG -->|"answer"| U
-    BG -->|"POST"| OR
-    OR -->|"response"| BG
+flowchart TD
+    W["⚡ Wokwi Simulator
+    ───────────────
+    Monaco Editor
+    RSC Stream
+    ZIP / diagram API"]
+
+    B[["◈  DOM Bridge
+    ─────────────
+    #__zapi_bridge__"]]
+
+    U["◧  content-ui.js
+    ───────────────
+    Chat Bubble
+    File Toggles"]
+
+    BG["◈  background.js
+    ───────────────
+    Circuit Validator
+    Context Builder"]
+
+    OR(["☁  OpenRouter
+    ──────────────
+    Claude · GPT-4o
+    Gemini · Llama"])
+
+    W  -->|" extract "| B
+    B  -->|" readBridge() "| U
+    U  -->|" chrome · ASK "| BG
+    BG -->|" answer "| U
+    BG -->|" POST /chat "| OR
+    OR -.->|" stream "| BG
 ```
 
 ---
