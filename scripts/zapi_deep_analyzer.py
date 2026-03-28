@@ -468,10 +468,20 @@ def main():
     print(f"\n  {colour}Architecture score: {score}/100{RST}")
     print(f"  {DIM}(−20 per critical · −5 per warning){RST}\n")
     print(f"{W}{'═'*62}{RST}\n")
+    return issues
 
 def ci_checks():
-    """Security + integrity checks for CI — exits 1 on any critical finding."""
-    failed = False
+    """Full CI gate: architecture analysis + security pattern checks.
+    Exits 1 if any critical issue is found."""
+
+    # ── Run full architecture analysis ────────────────────────────────────
+    issues = main()
+    arch_errors = [m for s, m in issues if s == "err"]
+    failed = len(arch_errors) > 0
+
+    print("─" * 62)
+    print("  CI SECURITY CHECKS")
+    print("─" * 62)
 
     # eval() anywhere in extension JS
     for name in ["content-main.js", "content-ui.js", "background.js", "popup.js"]:
