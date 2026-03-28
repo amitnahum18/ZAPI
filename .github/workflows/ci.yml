@@ -8,6 +8,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONIOENCODING: utf-8
 
 jobs:
   architecture-scan:
@@ -24,24 +25,28 @@ jobs:
           python-version: '3.11'
 
       - name: Run ZAPI Deep Analyzer
-        run: python scripts/zapi_deep_analyzer.py
-        env:
-          PYTHONIOENCODING: utf-8
+        run: python -X utf8 scripts/zapi_deep_analyzer.py; echo "Analyzer exit code: $?"
 
       - name: Check — no eval() in extension JS
         run: |
-          if grep -rn --include="*.js" "eval\s*(" extension/; then
-            echo "FAIL: eval() found in extension JS"
+          set -e
+          echo "Scanning for eval()..."
+          HITS=$(grep -rn "eval(" extension/ --include="*.js" || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL: eval() found:"
+            echo "$HITS"
             exit 1
           fi
           echo "OK: no eval() found"
 
       - name: Check — no innerHTML outside content-ui.js
         run: |
-          HITS=$(grep -rn --include="*.js" "innerHTML\s*=" extension/ \
+          set -e
+          echo "Scanning for innerHTML assignments..."
+          HITS=$(grep -rn "innerHTML" extension/ --include="*.js" \
             | grep -v "content-ui.js" || true)
           if [ -n "$HITS" ]; then
-            echo "FAIL: innerHTML assignment found outside content-ui.js:"
+            echo "FAIL: innerHTML found outside content-ui.js:"
             echo "$HITS"
             exit 1
           fi
@@ -49,26 +54,34 @@ jobs:
 
       - name: Check — no hardcoded API keys
         run: |
-          if grep -rn --include="*.js" "sk-or-[a-zA-Z0-9]" extension/; then
-            echo "FAIL: hardcoded API key detected"
+          set -e
+          echo "Scanning for hardcoded keys..."
+          HITS=$(grep -rn "sk-or-" extension/ --include="*.js" || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL: hardcoded API key found:"
+            echo "$HITS"
             exit 1
           fi
           echo "OK: no hardcoded API keys"
 
       - name: Check — manifest version is set
         run: |
+          set -e
           VERSION=$(python3 -c "
-          import json, sys
-          d = json.load(open('extension/manifest.json'))
-          v = d.get('version', '')
-          if not v:
-              sys.exit(1)
-          print(v)
-          ")
+import json, sys
+with open('extension/manifest.json') as f:
+    d = json.load(f)
+v = d.get('version', '').strip()
+if not v:
+    print('MISSING', file=sys.stderr)
+    sys.exit(1)
+print(v)
+")
           echo "Manifest version: $VERSION"
 
-      - name: Check — required extension files exist
+      - name: Check — required files exist
         run: |
+          set -e
           MISSING=0
           for f in \
             extension/manifest.json \
