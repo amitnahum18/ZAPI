@@ -1,0 +1,15 @@
+# Production ZIP (generated, not committed)
+*.zip
+*.crx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+
+# Node (if ever used for build tooling)
+node_modules/
+.claude/

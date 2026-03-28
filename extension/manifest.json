@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "ZAPI - Wokwi Copilot",
+  "version": "1.0",
+  "description": "AI electronics tutor for Wokwi simulator",
+  "minimum_chrome_version": "103",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://wokwi.com/*",
+    "https://openrouter.ai/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://wokwi.com/*", "https://wokwi.io/*"],
+      "js": ["content-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://wokwi.com/*", "https://wokwi.io/*"],
+      "js": ["content-ui.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
