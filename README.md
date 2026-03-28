@@ -20,35 +20,44 @@ It reads your live circuit (code files + `diagram.json`) automatically, validate
 
 ## How it works
 
-```
-┌─────────────────────────────────────────────┐
-│             Chrome Extension                │
-│                                             │
-│  content-main.js  (MAIN world)              │
-│    └─ Monaco getModels() — all open files   │
-│    └─ hooks __next_f (RSC stream)           │
-│    └─ fetch interceptor (lazy chunks)       │
-│    └─ ZIP API + diagram.json API            │
-│    └─ writes to DOM bridge element          │
-│                                             │
-│  content-ui.js    (ISOLATED world)          │
-│    └─ reads DOM bridge                      │
-│    └─ renders draggable bubble + panel      │
-│    └─ file toggle buttons (per file)        │
-│    └─ sends message to background.js        │
-│                                             │
-│  background.js    (Service Worker)          │
-│    └─ circuit validation (JS)              │
-│    └─ builds LLM context                   │
-│    └─ calls OpenRouter API directly         │
-│                                             │
-│  popup.html / popup.js                      │
-│    └─ saves OpenRouter API key + model      │
-│    └─ validates key against OpenRouter      │
-└─────────────────────────────────────────────┘
-                    │
-                    ▼
-         https://openrouter.ai/api/v1/chat/completions
+```mermaid
+flowchart TD
+    subgraph MAIN ["content-main.js · MAIN world"]
+        A1[Monaco getModels]
+        A2[__next_f RSC stream hook]
+        A3[fetch interceptor]
+        A4[Wokwi ZIP + diagram API]
+    end
+
+    subgraph BRIDGE ["DOM Bridge · #__zapi_bridge__"]
+        B1[data-zapi attribute · JSON]
+    end
+
+    subgraph UI ["content-ui.js · ISOLATED world"]
+        C1[readBridge]
+        C2[Chat bubble + panel]
+        C3[File toggle buttons]
+        C4[sendMessage]
+    end
+
+    subgraph BG ["background.js · Service Worker"]
+        D1[validateCircuit]
+        D2[buildContext]
+        D3[callOpenRouter]
+    end
+
+    subgraph POPUP ["popup.html / popup.js"]
+        E1[Save API key + model]
+        E2[Validate key]
+    end
+
+    A1 & A2 & A3 & A4 --> B1
+    B1 --> C1 --> C2 --> C3 --> C4
+    C4 --> D1 --> D2 --> D3
+    D3 --> |answer / error| C2
+    E1 & E2 -.->|chrome.storage| C4
+
+    D3 --> OR["openrouter.ai/api/v1/chat/completions"]
 ```
 
 ---
