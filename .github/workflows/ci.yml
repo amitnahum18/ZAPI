@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   architecture-scan:
     name: Architecture Scan
@@ -25,40 +28,48 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
 
-      - name: Check for dangerous JS patterns
+      - name: Check — no eval() in extension JS
         run: |
-          echo "=== Scanning for eval() ==="
-          ! grep -rn --include="*.js" "\beval\s*(" extension/ || \
-            (echo "FAIL: eval() found in extension JS" && exit 1)
+          if grep -rn --include="*.js" "eval\s*(" extension/; then
+            echo "FAIL: eval() found in extension JS"
+            exit 1
+          fi
+          echo "OK: no eval() found"
 
-          echo "=== Scanning for unsafe innerHTML assignments ==="
-          ! grep -rn --include="*.js" "innerHTML\s*=" extension/ \
-            --exclude="content-ui.js" || \
-            (echo "FAIL: innerHTML assignment found outside content-ui.js" && exit 1)
-
-          echo "=== Scanning for hardcoded API keys ==="
-          ! grep -rn --include="*.js" "sk-or-[a-zA-Z0-9]" extension/ || \
-            (echo "FAIL: hardcoded API key detected" && exit 1)
-
-          echo "=== Scanning for unexpected external URLs ==="
-          ! grep -rn --include="*.js" "http" extension/ \
-            | grep -v "openrouter.ai" \
-            | grep -v "wokwi.com" \
-            | grep -v "//\s" \
-            | grep -q "http" || \
-            echo "INFO: All external URLs are whitelisted"
-
-          echo "All security pattern checks passed."
-
-      - name: Verify manifest version is set
+      - name: Check — no innerHTML outside content-ui.js
         run: |
-          VERSION=$(python3 -c "import json; d=json.load(open('extension/manifest.json')); print(d.get('version',''))")
+          HITS=$(grep -rn --include="*.js" "innerHTML\s*=" extension/ \
+            | grep -v "content-ui.js" || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL: innerHTML assignment found outside content-ui.js:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "OK: innerHTML only in content-ui.js"
+
+      - name: Check — no hardcoded API keys
+        run: |
+          if grep -rn --include="*.js" "sk-or-[a-zA-Z0-9]" extension/; then
+            echo "FAIL: hardcoded API key detected"
+            exit 1
+          fi
+          echo "OK: no hardcoded API keys"
+
+      - name: Check — manifest version is set
+        run: |
+          VERSION=$(python3 -c "
+          import json, sys
+          d = json.load(open('extension/manifest.json'))
+          v = d.get('version', '')
+          if not v:
+              sys.exit(1)
+          print(v)
+          ")
           echo "Manifest version: $VERSION"
-          [ -n "$VERSION" ] || (echo "FAIL: version missing in manifest.json" && exit 1)
-          echo "Version check passed."
 
-      - name: Verify required extension files exist
+      - name: Check — required extension files exist
         run: |
+          MISSING=0
           for f in \
             extension/manifest.json \
             extension/content-main.js \
@@ -67,6 +78,11 @@ jobs:
             extension/popup.html \
             extension/popup.js \
             extension/styles.css; do
-            [ -f "$f" ] || (echo "FAIL: missing $f" && exit 1)
-            echo "OK: $f"
+            if [ -f "$f" ]; then
+              echo "OK: $f"
+            else
+              echo "FAIL: missing $f"
+              MISSING=1
+            fi
           done
+          exit $MISSING
