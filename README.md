@@ -8,7 +8,7 @@
 ## What is ZAPI?
 
 ZAPI is a Chrome extension that sits inside the Wokwi online electronics simulator.
-It reads your live circuit (code files + `diagram.json`) automatically, validates connections, and answers your questions using any AI model via [OpenRouter](https://openrouter.ai).
+It reads your live circuit (code files + `diagram.json`) automatically, validates connections, and answers your questions using any AI model — via [OpenRouter](https://openrouter.ai) (default) or any OpenAI-compatible endpoint.
 
 **Example questions you can ask:**
 - "למה ה-LED שלי לא נדלק?"
@@ -44,7 +44,7 @@ It reads your live circuit (code files + `diagram.json`) automatically, validate
 ## Requirements
 
 - **Chrome 103+** (Manifest V3)
-- An **[OpenRouter](https://openrouter.ai) API key** (free tier available)
+- An **[OpenRouter](https://openrouter.ai) API key** (free tier available) — or any OpenAI-compatible API key (see [Alternative Connection Options](#alternative-connection-options))
 - No Python, no server, no Docker
 
 ---
@@ -139,6 +139,35 @@ ZAPI works with any model available on OpenRouter. The following are pre-configu
 OpenRouter supports hundreds of models. To use any model not in the list:
 1. Find the model ID at [openrouter.ai/models](https://openrouter.ai/models)
 2. Currently, custom model IDs require editing `popup.js` — add the ID to the `MODELS` array
+
+---
+
+## Alternative Connection Options
+
+OpenRouter is the default and easiest option — one key gives access to all providers.
+If you prefer a direct connection, the table below shows the available alternatives.
+
+| Provider | Base URL | Key format | Notes |
+|----------|----------|------------|-------|
+| **OpenRouter** *(default)* | `https://openrouter.ai/api/v1` | `sk-or-...` | All models, free tier |
+| **OpenAI** | `https://api.openai.com/v1` | `sk-...` | GPT-4o, o1, o3 |
+| **Anthropic** | `https://api.anthropic.com/v1` | `sk-ant-...` | Claude only — different API format* |
+| **Google AI Studio** | `https://generativelanguage.googleapis.com` | `AIza...` | Gemini — different API format* |
+| **Groq** | `https://api.groq.com/openai/v1` | `gsk_...` | Free tier, very fast |
+| **Ollama (local)** | `http://localhost:11434/v1` | *(none needed)* | Runs models on your machine |
+| **Azure OpenAI** | `https://<resource>.openai.azure.com/openai` | Azure key | Enterprise / private deployment |
+
+> \* Anthropic and Google AI Studio use a different request/response format from OpenAI.
+> Connecting them directly requires modifying `background.js`.
+> **The easiest path for any provider is to add it through OpenRouter** — it handles the format translation automatically.
+
+### Switching to a different endpoint (advanced)
+
+ZAPI's API call is in `background.js` → `callOpenRouter()`.
+To point it at a different OpenAI-compatible endpoint:
+1. Change the `url` constant to the new base URL
+2. Update the `Authorization` header to match the provider's key format
+3. Add the new provider's models to the `MODELS` array in `popup.js`
 
 ---
 
