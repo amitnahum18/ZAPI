@@ -131,15 +131,18 @@ function validateCircuit(sketch, diagStr) {
   function isGnd(n) { return /GND|gnd/.test(n); }
   function isVcc(n) { return /VCC|5V|3\.3V|3V3/i.test(n); }
 
-  // ── 1. Short circuit: VCC reachable to GND without crossing any component ──
+  // ── 1. Short circuit: VCC directly wired to GND (1-hop check handles same-board pins) ──
   const vccNodes = Object.keys(conn).filter(isVcc);
+  let shortFound = false;
   for (const vcc of vccNodes) {
+    // Direct connection (e.g. uno:5V wired straight to uno:GND)
+    if ([...(conn[vcc] || [])].some(isGnd)) { shortFound = true; break; }
+    // Via a single wire node (e.g. through a breadboard rail with no component)
     const wireReach = reachableThruWires(vcc);
-    if ([...wireReach].some(isGnd)) {
-      findings.push({ level: 'error', message: `Short circuit detected: VCC connected directly to GND with no component in between` });
-      break;
-    }
+    if ([...wireReach].some(isGnd)) { shortFound = true; break; }
   }
+  if (shortFound)
+    findings.push({ level: 'error', message: 'Short circuit detected: VCC connected directly to GND with no component in between' });
 
   // ── 2. Floating components (parts with no connections at all) ─────────────
   const connectedIds = new Set(Object.keys(conn).map(n => n.split(':')[0]));
@@ -200,15 +203,17 @@ function validateCircuit(sketch, diagStr) {
     if (!part.type?.toLowerCase().includes('led')) continue;
     const anode   = `${pid}:A`;
     const cathode = `${pid}:C`;
-    const reach   = reachable(anode);
-    const hasGnd  = [...reach].some(isGnd);
+    // GND must be reachable from cathode (cathode → GND path)
+    const anodeReach   = reachable(anode);
+    const cathodeReach = conn[cathode] ? reachable(cathode) : new Set();
+    const hasGnd = [...cathodeReach].some(isGnd);
     if (!conn[cathode])
       findings.push({ level: 'error',   message: `${pid}: cathode (C) is not connected` });
     else if (!hasGnd)
       findings.push({ level: 'warning', message: `${pid}: cathode does not reach GND` });
 
-    // Find resistor and check its value
-    const resistorIds = [...reach]
+    // Find resistor and check its value (search from anode side)
+    const resistorIds = [...anodeReach]
       .map(n => n.split(':')[0])
       .filter(id => parts[id]?.type?.toLowerCase().includes('resistor'));
     if (!resistorIds.length) {
