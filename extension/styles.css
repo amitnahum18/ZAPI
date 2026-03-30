@@ -168,6 +168,14 @@
   border: none;
   padding: 4px 12px;
 }
+.zapi-usage {
+  font-size: 10px;
+  color: #4a5a7a;
+  text-align: right;
+  padding: 2px 12px 6px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.3px;
+}
 
 #zapi-input-area {
   padding: 10px 12px;

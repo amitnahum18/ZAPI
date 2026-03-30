@@ -47,7 +47,7 @@ function validateCircuit(sketch, diagStr) {
   let diagram;
   try { diagram = JSON.parse(diagStr); }
   catch (_) {
-    if (diagStr) findings.push({ level: 'error', message: 'diagram.json אינו JSON תקני' });
+    if (diagStr) findings.push({ level: 'error', message: 'diagram.json is not valid JSON' });
     return findings;
   }
 
@@ -86,7 +86,7 @@ function validateCircuit(sketch, diagStr) {
   const connPins = new Set(Object.keys(pinToNodes).map(Number));
   for (const pin of codePins) {
     if (!connPins.has(pin))
-      findings.push({ level: 'error', message: `חסר כבל: פין ${pin} מופיע בקוד אך אין חיבור בשרטוט` });
+      findings.push({ level: 'error', message: `Missing wire: pin ${pin} used in code but not connected in diagram` });
   }
 
   // LED checks
@@ -97,25 +97,25 @@ function validateCircuit(sketch, diagStr) {
     const reach   = reachable(anode);
     const hasGnd  = [...reach].some(n => n.includes('GND') || n.includes('gnd'));
     if (!conn[cathode])
-      findings.push({ level: 'error',   message: `${pid}: קתודה (C) לא מחוברת` });
+      findings.push({ level: 'error',   message: `${pid}: cathode (C) is not connected` });
     else if (!hasGnd)
-      findings.push({ level: 'warning', message: `${pid}: קתודה לא מגיעה ל-GND` });
+      findings.push({ level: 'warning', message: `${pid}: cathode does not reach GND` });
     const hasResistor = [...reach].some(n => {
       const id = n.split(':')[0];
       return parts[id]?.type?.toLowerCase().includes('resistor');
     });
     if (!hasResistor)
-      findings.push({ level: 'error', message: `${pid}: אין נגד מגביל זרם — LED עלול להישרף` });
+      findings.push({ level: 'error', message: `${pid}: no current-limiting resistor — LED may burn out` });
   }
 
   // delay() blocking
   const delays = [...(sketch || '').matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(mm => parseInt(mm[1]));
   const maxDelay = delays.length ? Math.max(...delays) : 0;
   if (maxDelay >= 5000)
-    findings.push({ level: 'info', message: `delay(${maxDelay}ms) — לוגיקה מקבילית לא אפשרית` });
+    findings.push({ level: 'info', message: `delay(${maxDelay}ms) detected — parallel logic is not possible` });
 
   if (!findings.length)
-    findings.push({ level: 'info', message: 'לא נמצאו בעיות ברורות במעגל' });
+    findings.push({ level: 'info', message: 'No obvious circuit issues found' });
   return findings;
 }
 
@@ -146,8 +146,8 @@ async function callOpenRouter(apiKey, model, userMessage) {
   }
   const data    = await resp.json();
   const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('תגובה ריקה מ-OpenRouter');
-  return content.trim();
+  if (!content) throw new Error('Empty response from OpenRouter');
+  return { content: content.trim(), usage: data.usage || null };
 }
 
 // ── Message handler ────────────────────────────────────────────────────────
@@ -195,11 +195,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
 
     try {
-      const answer = await callOpenRouter(apiKey, model, parts.join('\n\n'));
-      sendResponse({ answer });
+      const { content, usage } = await callOpenRouter(apiKey, model, parts.join('\n\n'));
+      sendResponse({ answer: content, usage });
     } catch (e) {
       const msg = (e.name === 'TimeoutError' || e.name === 'AbortError')
-        ? 'OpenRouter לא ענה בזמן — נסה שוב'
+        ? 'OpenRouter did not respond in time — please try again'
         : e.message;
       sendResponse({ error: msg });
     }

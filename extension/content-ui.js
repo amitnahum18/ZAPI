@@ -79,15 +79,15 @@
     </div>
     <div id="zapi-file-toggles"></div>
     <div id="zapi-messages">
-      <div class="zapi-msg bot">שלום! אני ZAPI, המורה שלך לאלקטרוניקה. שאל אותי על המעגל שלך.</div>
+      <div class="zapi-msg bot">Hi! I'm ZAPI, your electronics tutor. Ask me anything about your circuit — in English or Hebrew.</div>
     </div>
     <div id="zapi-no-key" style="display:none">
-      לא הוגדר מפתח API.<br>
-      פתח את התוסף (אייקון ⚡ בסרגל הדפדפן) כדי להגדיר מפתח.
+      No API key configured.<br>
+      Click the ⚡ icon in the browser toolbar to set your key.
     </div>
     <div id="zapi-input-area">
       <button id="zapi-send">&#9658;</button>
-      <textarea id="zapi-input" rows="1" placeholder="...שאל שאלה" dir="rtl"></textarea>
+      <textarea id="zapi-input" rows="1" placeholder="Ask a question..."></textarea>
     </div>
   `;
 
@@ -163,7 +163,7 @@
     container.innerHTML = '';
 
     if (allNames.length === 0) {
-      container.innerHTML = '<span style="color:#555;font-size:11px;padding:4px 8px">ממתין לקבצים...</span>';
+      container.innerHTML = '<span style="color:#555;font-size:11px;padding:4px 8px">Waiting for files...</span>';
       return;
     }
 
@@ -177,24 +177,24 @@
       if (extracted) {
         const active = !selectedFiles || selectedFiles.has(name);
         btn.dataset.active = active ? '1' : '0';
-        btn.title = active ? 'לחץ להסרה מהקונטקסט' : 'לחץ להוספה לקונטקסט';
+        btn.title = active ? 'Click to remove from context' : 'Click to add to context';
         btn.addEventListener('click', () => {
           if (!selectedFiles) selectedFiles = new Set([...extractedAll]);
           if (selectedFiles.has(name)) {
             selectedFiles.delete(name);
             btn.dataset.active = '0';
-            btn.title = 'לחץ להוספה לקונטקסט';
+            btn.title = 'Click to add to context';
           } else {
             selectedFiles.add(name);
             btn.dataset.active = '1';
-            btn.title = 'לחץ להסרה מהקונטקסט';
+            btn.title = 'Click to remove from context';
           }
         });
       } else {
         // Known from Monaco but not yet read
         btn.dataset.active = 'pending';
         btn.disabled = true;
-        btn.title = 'טרם נקרא מהעורך — לחץ ↺ לרענון';
+        btn.title = 'Not yet read from editor — click ↺ to refresh';
       }
 
       container.appendChild(btn);
@@ -204,7 +204,7 @@
     const refreshBtn = document.createElement('button');
     refreshBtn.className   = 'zapi-file-refresh';
     refreshBtn.textContent = '↺';
-    refreshBtn.title       = 'רענן קבצים';
+    refreshBtn.title       = 'Refresh files';
     refreshBtn.addEventListener('click', () => {
       _lastFileKey = '';
       triggerRefresh();
@@ -361,8 +361,8 @@
     pressTimer = setTimeout(() => {
       const data = readBridge();
       const msg  = data._healthy
-        ? `Debug ✓\ncode: ${(data.files?.code||[]).map(x=>x.name).join(', ')||'לא נמצא'}\ndiagram: ${(data.files?.diagram||[]).map(x=>x.name).join(', ')||'לא נמצא'}`
-        : 'Debug ✗ — bridge ריק. פתח פרויקט ב-Wokwi ונסה שוב.';
+        ? `Debug ✓\ncode: ${(data.files?.code||[]).map(x=>x.name).join(', ')||'none'}\ndiagram: ${(data.files?.diagram||[]).map(x=>x.name).join(', ')||'none'}`
+        : 'Debug ✗ — bridge is empty. Open a Wokwi project and try again.';
       appendMessage(msg, 'thinking');
     }, 1500);
   });
@@ -385,7 +385,7 @@
     await new Promise(r => setTimeout(r, 150));
 
     appendMessage(question, 'user');
-    const thinkingEl = appendMessage('חושב...', 'thinking');
+    const thinkingEl = appendMessage('Thinking...', 'thinking');
 
     try {
       const result = await new Promise((resolve, reject) => {
@@ -403,13 +403,14 @@
 
       thinkingEl.remove();
       if (result.error) {
-        appendMessage('שגיאה: ' + result.error, 'bot');
+        appendMessage('Error: ' + result.error, 'bot');
       } else {
         appendMessage(result.answer, 'bot');
+        if (result.usage) appendUsage(result.usage);
       }
     } catch (e) {
       thinkingEl.remove();
-      appendMessage('שגיאה: ' + e.message, 'bot');
+      appendMessage('Error: ' + e.message, 'bot');
     }
 
     isLoading = false;
@@ -492,6 +493,19 @@
     }
 
     return out.join('');
+  }
+
+  // ── Token usage display ───────────────────────────────────────────────────
+  function appendUsage(usage) {
+    const msgs = document.getElementById('zapi-messages');
+    const el   = document.createElement('div');
+    el.className = 'zapi-usage';
+    const total  = usage.total_tokens    || 0;
+    const prompt = usage.prompt_tokens   || 0;
+    const compl  = usage.completion_tokens || 0;
+    el.textContent = `⬡ ${total} tokens  (↑${prompt} in · ↓${compl} out)`;
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
   }
 
   // ── Append message ────────────────────────────────────────────────────────
