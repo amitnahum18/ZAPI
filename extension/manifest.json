@@ -11,13 +11,13 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://wokwi.com/*", "https://wokwi.io/*"],
+      "matches": ["https://wokwi.com/projects/*", "https://wokwi.io/projects/*"],
       "js": ["content-main.js"],
       "world": "MAIN",
       "run_at": "document_start"
     },
     {
-      "matches": ["https://wokwi.com/*", "https://wokwi.io/*"],
+      "matches": ["https://wokwi.com/projects/*", "https://wokwi.io/projects/*"],
       "js": ["content-ui.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"

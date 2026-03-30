@@ -204,12 +204,19 @@
 
   }
 
-  // Auto-refresh: poll every 3s when panel is open
-  setInterval(() => {
-    if (!isOpen) return;
-    triggerRefresh();
-    setTimeout(updateFileToggles, 400);
-  }, 3000);
+  // Auto-refresh: runs only while panel is open
+  let _refreshInterval = null;
+  function startAutoRefresh() {
+    if (_refreshInterval) return;
+    _refreshInterval = setInterval(() => {
+      triggerRefresh();
+      setTimeout(updateFileToggles, 400);
+    }, 3000);
+  }
+  function stopAutoRefresh() {
+    clearInterval(_refreshInterval);
+    _refreshInterval = null;
+  }
 
 
   // ── Drag-to-resize handle — grows UPWARD ─────────────────────────────────
@@ -331,10 +338,14 @@
       bubble._positionPanel();
       triggerRefresh();
       setTimeout(updateFileToggles, 400);
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
     }
   });
   document.getElementById('zapi-close').addEventListener('click', () => {
     isOpen = false; panel.classList.remove('visible'); bubble.classList.remove('open');
+    stopAutoRefresh();
   });
   // User must open the popup by clicking the extension icon in the toolbar.
 
