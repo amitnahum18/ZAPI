@@ -1,6 +1,6 @@
 # ZAPI — AI Electronics Tutor for Wokwi
 
-> Ask questions about your circuit in Hebrew or English — directly inside [Wokwi](https://wokwi.com).
+> Ask questions about your circuit in English or Hebrew — directly inside [Wokwi](https://wokwi.com).
 > No server. No setup. No code pasting.
 
 ---
@@ -11,10 +11,17 @@ ZAPI is a Chrome extension that sits inside the Wokwi online electronics simulat
 It reads your live circuit (code files + `diagram.json`) automatically, validates connections, and answers your questions using any AI model — via [OpenRouter](https://openrouter.ai) (default) or any OpenAI-compatible endpoint.
 
 **Example questions you can ask:**
-- "למה ה-LED שלי לא נדלק?"
+- "Why isn't my LED turning on?"
 - "Which resistor value should I use for pin 13?"
-- "הסבר לי את הקוד שרשמתי"
+- "הסבר לי את הקוד שרשמתי" *(Hebrew is fully supported)*
 - "Is my I2C wiring correct?"
+
+### Language
+ZAPI responds in **English by default**. Write your question in Hebrew and it will automatically switch to Hebrew. The UI is in English; the AI follows your lead.
+
+### Token Usage Log
+Every response shows how many tokens were consumed (`⬡ N tokens`).
+Click the **⬡ counter in the header** to open the session log — a breakdown of every request with input/output token counts and a running session total.
 
 ---
 
