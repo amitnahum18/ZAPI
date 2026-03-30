@@ -156,7 +156,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   (async () => {
     const { question, circuitContext, apiKey, model } = msg;
-    const parts = [`שאלה: ${question}`];
+    const parts = [question];
 
     if (circuitContext) {
       const files = {};

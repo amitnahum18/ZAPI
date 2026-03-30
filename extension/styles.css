@@ -61,12 +61,50 @@
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #2a2a4e;
-  direction: rtl;
+  direction: ltr;
 }
-#zapi-header span:last-child {
+#zapi-header span:nth-child(2) {
   color: #7b9fff;
   font-weight: bold;
   font-size: 15px;
+}
+#zapi-token-toggle {
+  font-size: 11px;
+  color: #4a5a7a;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+#zapi-token-toggle:hover { background: #1e2a4a; color: #7b9fff; }
+#zapi-token-log {
+  background: #0a1628;
+  border-bottom: 1px solid #1e2a4a;
+  padding: 6px 10px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+.zapi-token-log-empty { color: #4a5a7a; padding: 4px 0; }
+.zapi-token-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid #0d1b33;
+}
+.zapi-token-num  { color: #3a4a6a; min-width: 24px; }
+.zapi-token-q    { color: #8898bb; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zapi-token-val  { color: #7b9fff; white-space: nowrap; }
+.zapi-token-detail { color: #4a5a7a; font-size: 10px; }
+.zapi-token-total {
+  color: #5a6a8a;
+  padding-top: 5px;
+  margin-top: 3px;
+  border-top: 1px solid #1e2a4a;
+  text-align: right;
 }
 #zapi-close {
   cursor: pointer;

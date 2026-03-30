@@ -76,7 +76,9 @@
     <div id="zapi-header">
       <span id="zapi-close">&#10005;</span>
       <span>ZAPI &#9889;</span>
+      <span id="zapi-token-toggle" title="Token usage log">⬡ 0</span>
     </div>
+    <div id="zapi-token-log" style="display:none"></div>
     <div id="zapi-file-toggles"></div>
     <div id="zapi-messages">
       <div class="zapi-msg bot">Hi! I'm ZAPI, your electronics tutor. Ask me anything about your circuit — in English or Hebrew.</div>
@@ -406,7 +408,7 @@
         appendMessage('Error: ' + result.error, 'bot');
       } else {
         appendMessage(result.answer, 'bot');
-        if (result.usage) appendUsage(result.usage);
+        if (result.usage) appendUsage(result.usage, question);
       }
     } catch (e) {
       thinkingEl.remove();
@@ -495,15 +497,48 @@
     return out.join('');
   }
 
-  // ── Token usage display ───────────────────────────────────────────────────
-  function appendUsage(usage) {
+  // ── Token usage log ───────────────────────────────────────────────────────
+  let _sessionTokens = 0;
+  let _requestCount  = 0;
+  const _tokenHistory = [];
+
+  let _tokenLogOpen = false;
+  document.getElementById('zapi-token-toggle').addEventListener('click', () => {
+    _tokenLogOpen = !_tokenLogOpen;
+    document.getElementById('zapi-token-log').style.display = _tokenLogOpen ? 'block' : 'none';
+  });
+
+  function updateTokenLog() {
+    const toggle = document.getElementById('zapi-token-toggle');
+    toggle.textContent = `⬡ ${_sessionTokens.toLocaleString()}`;
+
+    const log = document.getElementById('zapi-token-log');
+    if (!_tokenHistory.length) { log.innerHTML = '<div class="zapi-token-log-empty">No requests yet</div>'; return; }
+
+    log.innerHTML = _tokenHistory.map((h, i) =>
+      `<div class="zapi-token-row">
+        <span class="zapi-token-num">#${i + 1}</span>
+        <span class="zapi-token-q">${h.q}</span>
+        <span class="zapi-token-val">⬡ ${h.total.toLocaleString()} <span class="zapi-token-detail">(↑${h.prompt} ↓${h.compl})</span></span>
+      </div>`
+    ).join('') +
+    `<div class="zapi-token-total">Session total: ${_sessionTokens.toLocaleString()} tokens (${_requestCount} requests)</div>`;
+  }
+
+  function appendUsage(usage, question) {
+    const total  = usage.total_tokens      || 0;
+    const prompt = usage.prompt_tokens     || 0;
+    const compl  = usage.completion_tokens || 0;
+
+    _sessionTokens += total;
+    _requestCount++;
+    _tokenHistory.push({ q: question.length > 30 ? question.slice(0, 30) + '…' : question, total, prompt, compl });
+    updateTokenLog();
+
     const msgs = document.getElementById('zapi-messages');
     const el   = document.createElement('div');
     el.className = 'zapi-usage';
-    const total  = usage.total_tokens    || 0;
-    const prompt = usage.prompt_tokens   || 0;
-    const compl  = usage.completion_tokens || 0;
-    el.textContent = `⬡ ${total} tokens  (↑${prompt} in · ↓${compl} out)`;
+    el.textContent = `⬡ ${total.toLocaleString()} tokens  (↑${prompt} in · ↓${compl} out)`;
     msgs.appendChild(el);
     msgs.scrollTop = msgs.scrollHeight;
   }
