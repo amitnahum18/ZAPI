@@ -62,6 +62,21 @@ function validateCircuit(sketch, diagStr) {
     (conn[b] = conn[b] || new Set()).add(a);
   }
 
+  // Returns all nodes reachable via wires (does NOT cross through resistive components)
+  function reachableThruWires(node, visited = new Set()) {
+    if (visited.has(node) || visited.size > 300) return visited;
+    visited.add(node);
+    for (const n of (conn[node] || [])) {
+      // Don't cross from one pin of a resistive part to its other pin
+      const nid = n.split(':')[0];
+      const sid = node.split(':')[0];
+      if (nid === sid) continue; // same component — skip (would mean crossing through it)
+      reachableThruWires(n, visited);
+    }
+    return visited;
+  }
+
+  // Returns all nodes reachable via any path (crosses through components)
   function reachable(node, visited = new Set()) {
     if (visited.has(node) || visited.size > 300) return visited;
     visited.add(node);
@@ -69,7 +84,29 @@ function validateCircuit(sketch, diagStr) {
     return visited;
   }
 
-  // Pin usage in code vs diagram
+  function isGnd(n) { return /GND|gnd/.test(n); }
+  function isVcc(n) { return /VCC|5V|3\.3V|3V3/i.test(n); }
+
+  // ── 1. Short circuit: VCC reachable to GND without crossing any component ──
+  const vccNodes = Object.keys(conn).filter(isVcc);
+  for (const vcc of vccNodes) {
+    const wireReach = reachableThruWires(vcc);
+    if ([...wireReach].some(isGnd)) {
+      findings.push({ level: 'error', message: `Short circuit detected: VCC connected directly to GND with no component in between` });
+      break;
+    }
+  }
+
+  // ── 2. Floating components (parts with no connections at all) ─────────────
+  const connectedIds = new Set(Object.keys(conn).map(n => n.split(':')[0]));
+  for (const [pid, part] of Object.entries(parts)) {
+    // Skip power/ground rails and boards (they may have implicit connections)
+    if (/power|ground|gnd|vcc|pwr|board|nano|uno|mega|esp/i.test(part.type || '')) continue;
+    if (!connectedIds.has(pid))
+      findings.push({ level: 'warning', message: `${pid} (${part.type || 'unknown'}) has no connections — floating component` });
+  }
+
+  // ── 3. Pin usage in code vs diagram ───────────────────────────────────────
   const pinRe = /(?:pinMode|digitalWrite|digitalRead|analogWrite|analogRead)\s*\(\s*(\d+)/gi;
   const codePins = new Set();
   let m;
@@ -89,26 +126,61 @@ function validateCircuit(sketch, diagStr) {
       findings.push({ level: 'error', message: `Missing wire: pin ${pin} used in code but not connected in diagram` });
   }
 
-  // LED checks
+  // ── 4. Output-output conflict ──────────────────────────────────────────────
+  const outputPinRe = /pinMode\s*\(\s*(\d+)\s*,\s*OUTPUT\s*\)/gi;
+  const outputPins = new Set();
+  let om;
+  while ((om = outputPinRe.exec(sketch || '')) !== null) outputPins.add(parseInt(om[1]));
+  if (outputPins.size >= 2) {
+    const outputNodes = [...outputPins].flatMap(p => pinToNodes[p] || []);
+    for (let i = 0; i < outputNodes.length; i++) {
+      for (let j = i + 1; j < outputNodes.length; j++) {
+        if ((conn[outputNodes[i]] || new Set()).has(outputNodes[j])) {
+          findings.push({ level: 'error', message: `Output-output conflict: ${outputNodes[i]} and ${outputNodes[j]} are directly connected — this can damage the board` });
+        }
+      }
+    }
+  }
+
+  // ── 5. LED checks ──────────────────────────────────────────────────────────
+  function parseOhms(val) {
+    if (!val) return null;
+    const s = String(val).trim().toLowerCase();
+    const km = s.match(/^([\d.]+)\s*k$/);
+    if (km) return parseFloat(km[1]) * 1000;
+    const num = parseFloat(s);
+    return isNaN(num) ? null : num;
+  }
+
   for (const [pid, part] of Object.entries(parts)) {
     if (!part.type?.toLowerCase().includes('led')) continue;
     const anode   = `${pid}:A`;
     const cathode = `${pid}:C`;
     const reach   = reachable(anode);
-    const hasGnd  = [...reach].some(n => n.includes('GND') || n.includes('gnd'));
+    const hasGnd  = [...reach].some(isGnd);
     if (!conn[cathode])
       findings.push({ level: 'error',   message: `${pid}: cathode (C) is not connected` });
     else if (!hasGnd)
       findings.push({ level: 'warning', message: `${pid}: cathode does not reach GND` });
-    const hasResistor = [...reach].some(n => {
-      const id = n.split(':')[0];
-      return parts[id]?.type?.toLowerCase().includes('resistor');
-    });
-    if (!hasResistor)
+
+    // Find resistor and check its value
+    const resistorIds = [...reach]
+      .map(n => n.split(':')[0])
+      .filter(id => parts[id]?.type?.toLowerCase().includes('resistor'));
+    if (!resistorIds.length) {
       findings.push({ level: 'error', message: `${pid}: no current-limiting resistor — LED may burn out` });
+    } else {
+      for (const rid of resistorIds) {
+        const ohms = parseOhms(parts[rid]?.attrs?.value);
+        if (ohms !== null && ohms < 47)
+          findings.push({ level: 'error', message: `${rid}: resistance ${ohms}Ω is too low for ${pid} — LED may burn out (min ~47Ω at 5V)` });
+        else if (ohms !== null && ohms > 10000)
+          findings.push({ level: 'warning', message: `${rid}: resistance ${ohms}Ω is very high — ${pid} may be too dim or not light at all` });
+      }
+    }
   }
 
-  // delay() blocking
+  // ── 6. delay() blocking ───────────────────────────────────────────────────
   const delays = [...(sketch || '').matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(mm => parseInt(mm[1]));
   const maxDelay = delays.length ? Math.max(...delays) : 0;
   if (maxDelay >= 5000)
