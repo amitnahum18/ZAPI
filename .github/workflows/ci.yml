@@ -26,3 +26,6 @@ jobs:
 
       - name: Run Architecture + Security Checks
         run: python -X utf8 scripts/zapi_deep_analyzer.py --ci
+
+      - name: Run Circuit Validation Tests
+        run: node scripts/test_validation.js
