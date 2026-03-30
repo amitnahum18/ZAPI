@@ -196,27 +196,20 @@
         // Known from Monaco but not yet read
         btn.dataset.active = 'pending';
         btn.disabled = true;
-        btn.title = 'Not yet read from editor — click ↺ to refresh';
+        btn.title = 'Not yet read from editor — will auto-refresh';
       }
 
       container.appendChild(btn);
     }
 
-    // Refresh button at the end
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className   = 'zapi-file-refresh';
-    refreshBtn.textContent = '↺';
-    refreshBtn.title       = 'Refresh files';
-    refreshBtn.addEventListener('click', () => {
-      _lastFileKey = '';
-      triggerRefresh();
-      setTimeout(updateFileToggles, 400);
-      setTimeout(updateFileToggles, 1200);
-    });
-    container.appendChild(refreshBtn);
   }
 
-  setInterval(() => { if (isOpen) updateFileToggles(); }, 2000);
+  // Auto-refresh: poll every 3s when panel is open
+  setInterval(() => {
+    if (!isOpen) return;
+    triggerRefresh();
+    setTimeout(updateFileToggles, 400);
+  }, 3000);
 
 
   // ── Drag-to-resize handle — grows UPWARD ─────────────────────────────────
@@ -338,7 +331,6 @@
       bubble._positionPanel();
       triggerRefresh();
       setTimeout(updateFileToggles, 400);
-      setTimeout(() => { triggerRefresh(); updateFileToggles(); }, 1500);
     }
   });
   document.getElementById('zapi-close').addEventListener('click', () => {
@@ -383,11 +375,18 @@
     isLoading = true;
     sendBtn.disabled = true;
 
-    triggerRefresh();
-    await new Promise(r => setTimeout(r, 150));
+    // Bridge is kept fresh by the 3s auto-refresh — no extra refresh needed here
 
     appendMessage(question, 'user');
     const thinkingEl = appendMessage('Thinking...', 'thinking');
+
+    if (!chrome?.runtime?.sendMessage) {
+      thinkingEl.remove();
+      appendMessage('Extension context lost — please refresh the page (F5).', 'bot');
+      isLoading = false;
+      sendBtn.disabled = false;
+      return;
+    }
 
     try {
       const result = await new Promise((resolve, reject) => {

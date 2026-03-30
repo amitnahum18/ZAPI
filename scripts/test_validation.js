@@ -1,6 +1,6 @@
 // Circuit validation test suite
 
-function validateCircuit(sketch, diagStr) {
+function validateCircuit(sketch, diagStr, deepMode = false) {
   const findings = [];
   if (!sketch && !diagStr) return findings;
   let diagram;
@@ -106,23 +106,54 @@ function validateCircuit(sketch, diagStr) {
     const anodeReach  = reachable(anode);
     const cathodeReach = conn[cathode] ? reachable(cathode) : new Set();
     const hasGnd = [...cathodeReach].some(isGnd);
+    if (!conn[anode]) {
+      findings.push({ level: 'error', message: pid + ': anode (A) is not connected — LED cannot light up' });
+    } else {
+      const resistorIds = [...anodeReach].map(n => n.split(':')[0]).filter(id => parts[id] && parts[id].type && parts[id].type.toLowerCase().includes('resistor'));
+      if (!resistorIds.length) {
+        findings.push({ level: 'error', message: pid + ': no current-limiting resistor — LED may burn out' });
+      } else {
+        for (const rid of resistorIds) {
+          const ohms = parseOhms(parts[rid] && parts[rid].attrs && parts[rid].attrs.value);
+          if (ohms !== null && ohms < 47)
+            findings.push({ level: 'error', message: rid + ': ' + ohms + ' is too low for ' + pid + ' (min ~47)' });
+          else if (ohms !== null && ohms > 10000)
+            findings.push({ level: 'warning', message: rid + ': ' + ohms + ' is very high — ' + pid + ' may be too dim' });
+        }
+      }
+    }
     if (!conn[cathode]) findings.push({ level: 'error', message: pid + ': cathode (C) is not connected' });
     else if (!hasGnd)   findings.push({ level: 'warning', message: pid + ': cathode does not reach GND' });
-    const resistorIds = [...anodeReach].map(n => n.split(':')[0]).filter(id => parts[id] && parts[id].type && parts[id].type.toLowerCase().includes('resistor'));
-    if (!resistorIds.length) {
-      findings.push({ level: 'error', message: pid + ': no current-limiting resistor — LED may burn out' });
-    } else {
-      for (const rid of resistorIds) {
-        const ohms = parseOhms(parts[rid] && parts[rid].attrs && parts[rid].attrs.value);
-        if (ohms !== null && ohms < 47)
-          findings.push({ level: 'error', message: rid + ': ' + ohms + ' is too low for ' + pid + ' (min ~47)' });
-        else if (ohms !== null && ohms > 10000)
-          findings.push({ level: 'warning', message: rid + ': ' + ohms + ' is very high — ' + pid + ' may be too dim' });
-      }
+  }
+
+  // 6. Button checks (deep mode only)
+  if (deepMode) {
+    for (const [pid, part] of Object.entries(parts)) {
+      if (!/button|pushbutton/i.test(part.type || '')) continue;
+      const btnReach = reachable(pid + ':1');
+      const hasSignalPin = [...btnReach].some(n => /^uno:\d+$/.test(n));
+      const pullNodes = [...btnReach].map(n => n.split(':')[0]).filter(id => parts[id] && parts[id].type && parts[id].type.toLowerCase().includes('resistor'));
+      if (!hasSignalPin)
+        findings.push({ level: 'warning', message: pid + ': not connected to any Arduino pin' });
+      if (!pullNodes.length && hasSignalPin)
+        findings.push({ level: 'warning', message: pid + ': no pull resistor detected — input will float (add 10kΩ to GND or use INPUT_PULLUP)' });
+    }
+
+    // 7. I2C pull-up check
+    const sdaNodes = Object.keys(conn).filter(n => /SDA/i.test(n));
+    const sclNodes = Object.keys(conn).filter(n => /SCL/i.test(n));
+    if (sdaNodes.length || sclNodes.length) {
+      const i2cIds = new Set([...sdaNodes, ...sclNodes].map(n => n.split(':')[0]));
+      if (i2cIds.size > 8)
+        findings.push({ level: 'warning', message: 'I2C bus has ' + i2cIds.size + ' devices — max 8 supported' });
+      const sdaReach = sdaNodes.length ? reachable(sdaNodes[0]) : new Set();
+      const hasSdaPullup = [...sdaReach].map(n => n.split(':')[0]).some(id => parts[id] && parts[id].type && parts[id].type.toLowerCase().includes('resistor'));
+      if (!hasSdaPullup)
+        findings.push({ level: 'warning', message: 'I2C: no pull-up resistor detected on SDA/SCL — both lines need 4.7kΩ to VCC' });
     }
   }
 
-  // 6. delay
+  // 8. delay
   const delays = [...(sketch || '').matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(mm => parseInt(mm[1]));
   const maxDelay = delays.length ? Math.max(...delays) : 0;
   if (maxDelay >= 5000) findings.push({ level: 'info', message: 'delay(' + maxDelay + 'ms) detected' });
@@ -137,8 +168,8 @@ const RED   = '\x1b[31m';
 const RESET = '\x1b[0m';
 let passed = 0, failed = 0;
 
-function test(name, sketch, diagram, expectContains) {
-  const findings = validateCircuit(sketch, JSON.stringify(diagram));
+function test(name, sketch, diagram, expectContains, deepMode = false) {
+  const findings = validateCircuit(sketch, JSON.stringify(diagram), deepMode);
   const msgs = findings.map(f => f.message);
   const missing = expectContains.filter(exp => !msgs.some(m => m.toLowerCase().includes(exp.toLowerCase())));
   if (missing.length === 0) {
@@ -162,6 +193,15 @@ test('LED cathode disconnected', '', {
   ],
   connections: [['uno:13', 'r1:1'], ['r1:2', 'led1:A']]
 }, ['cathode (C) is not connected']);
+
+test('LED anode disconnected', '', {
+  parts: [
+    { id: 'led1', type: 'wokwi-led' },
+    { id: 'r1',   type: 'wokwi-resistor', attrs: { value: '220' } },
+    { id: 'uno',  type: 'wokwi-uno-r3' }
+  ],
+  connections: [['led1:C', 'uno:GND']]
+}, ['anode (A) is not connected']);
 
 test('LED missing resistor', '', {
   parts: [
@@ -225,6 +265,32 @@ test('Clean circuit — LED + 220 Ohm wired correctly', '', {
   ],
   connections: [['uno:13', 'r1:1'], ['r1:2', 'led1:A'], ['led1:C', 'uno:GND']]
 }, ['no obvious circuit issues']);
+
+// ── Deep mode tests ───────────────────────────────────────────────────────────
+
+test('Button without pull resistor (deep)', 'void setup(){ pinMode(2, INPUT); }', {
+  parts: [
+    { id: 'btn1', type: 'wokwi-pushbutton' },
+    { id: 'uno',  type: 'wokwi-uno-r3' }
+  ],
+  connections: [['btn1:1', 'uno:2'], ['btn1:3', 'uno:GND']]
+}, ['no pull resistor'], true);
+
+test('I2C without pull-up resistors (deep)', '', {
+  parts: [
+    { id: 'lcd1', type: 'wokwi-lcd1602', attrs: {} },
+    { id: 'uno',  type: 'wokwi-uno-r3' }
+  ],
+  connections: [['uno:A4', 'lcd1:SDA'], ['uno:A5', 'lcd1:SCL']]
+}, ['no pull-up resistor'], true);
+
+test('Button check skipped in normal mode', 'void setup(){ pinMode(2, INPUT); }', {
+  parts: [
+    { id: 'btn1', type: 'wokwi-pushbutton' },
+    { id: 'uno',  type: 'wokwi-uno-r3' }
+  ],
+  connections: [['btn1:1', 'uno:2'], ['btn1:3', 'uno:GND']]
+}, ['no obvious circuit issues'], false);
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log('\n' + (passed + failed) + ' tests  —  ' + passed + ' passed, ' + failed + ' failed');

@@ -315,17 +315,5 @@
 .zapi-file-btn[data-type="code"][data-active="1"]    { border-color: #4cff72; color: #0d2010; }
 
 /* Refresh mini-button */
-.zapi-file-refresh {
-  padding: 2px 7px;
-  border-radius: 10px;
-  font-size: 13px;
-  cursor: pointer;
-  border: 1px solid #2a3a5a;
-  background: transparent;
-  color: #555;
-  transition: color 0.15s;
-  flex-shrink: 0;
-  margin-right: auto;
-}
-.zapi-file-refresh:hover { color: #7b9fff; border-color: #7b9fff; }
+
 

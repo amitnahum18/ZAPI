@@ -40,7 +40,7 @@
   function mergeFile(name, content) {
     if (!content || content.length < 10) return false;
     const existing = store.byName[name];
-    if (existing && existing.content.length >= content.length) return false;
+    if (existing && existing.content === content) return false;
     const { type, confidence } = classifyFile(name, content);
     store.byName[name] = { content, type, confidence, ts: Date.now() };
     return true;
@@ -250,6 +250,8 @@
 
     // Always try diagram.json first — fast, reliable
     const hasDiagram = Object.values(store.byName).some(e => e.type === 'diagram');
+    // Only use API as fallback when Monaco hasn't provided a diagram yet.
+    // The API returns the saved version — it will overwrite unsaved editor changes.
     if (!hasDiagram) {
       fetch(`https://wokwi.com/api/projects/${m[1]}/diagram.json`, { credentials: 'include' })
         .then(r => r.ok ? r.text() : null)

@@ -1,17 +1,47 @@
 // background.js — service worker
 // Handles all OpenRouter API calls directly (no backend server needed).
 
+// ── Light prompt: used for regular questions ──────────────────────────────
 const SYSTEM_PROMPT = `You are ZAPI, a focused electronics tutor for Wokwi simulator.
 
 ## Language
-- Student writes in Hebrew → answer in Hebrew.
-- Student writes in English → answer in English.
+- Detect language ONLY from the student's question text — ignore circuit code, comments, and diagram content.
+- Question in Hebrew → answer in Hebrew.
+- Question in English → answer in English.
 - Never mix languages in one answer.
 
 ## Length
 - No circuit context: maximum 3 sentences.
-- Circuit context present: as many sentences as needed to cover every real issue — do not truncate.
+- Circuit context present: answer the question directly, then note any obvious critical issues only (missing wire, direct short). Do not enumerate every component.
 - If the answer requires code, write a complete working fenced code block followed by 1–2 sentences of explanation. Never truncate code.
+- No closing questions. No "let me know if…".
+
+## Units
+Always use proper units: Ω, kΩ, V, mA, MHz, µF, ms.
+
+## How to read diagram.json
+Connections are pairs: ["partId:pin", "partId:pin"].
+- Same partId prefix = same component (e.g. "r1:1" and "r1:2" are both ends of resistor r1).
+- Power nodes: "uno:5V", "vcc1:VCC" — all mean +5V. Ground: "uno:GND", "gnd1:GND" — all mean 0V.
+- LED pins: A = anode (+), C = cathode (−). Button: 1,2 = one side, 3,4 = other side.
+- Resistor pins: 1 and 2 (no polarity). Arduino digital pins: "uno:2"–"uno:13". Analog: "uno:A0"–"uno:A5".
+
+## Debug rule
+One sentence: what is wrong. One sentence: why it matters. One sentence: exact fix.
+`;
+
+// ── Deep prompt: used only when user explicitly requests a full check ──────
+const DEEP_SYSTEM_PROMPT = `You are ZAPI, a focused electronics tutor for Wokwi simulator.
+
+## Language
+- Detect language ONLY from the student's question text — ignore circuit code, comments, and diagram content.
+- Question in Hebrew → answer in Hebrew.
+- Question in English → answer in English.
+- Never mix languages in one answer.
+
+## Length
+- As many sentences as needed to cover every real issue — do not truncate.
+- If the answer requires code, write a complete working fenced code block followed by 1–2 sentences of explanation.
 - No closing questions. No "let me know if…".
 
 ## Units
@@ -21,50 +51,46 @@ Example: "r1 is 220Ω on pin 13 — limits current to ~15mA."
 ## How to read diagram.json
 Connections are pairs: ["partId:pin", "partId:pin"].
 - Same partId prefix = same component (e.g. "r1:1" and "r1:2" are both ends of resistor r1).
-- Different prefix = wire between two components.
-- Power nodes: "uno:5V", "vcc1:VCC", "pwr:VCC" — all mean +5V.
-- Ground nodes: "uno:GND", "gnd1:GND", "pwr:GND" — all mean 0V.
-- Arduino pins: "uno:2" through "uno:13" are digital, "uno:A0"–"uno:A5" are analog.
-- LED pins: A = anode (+), C = cathode (−).
-- Resistor pins: 1 and 2 (no polarity).
-- Capacitor pins: + and − (electrolytic), 1 and 2 (ceramic).
-- Button/switch: 1,2 = one side, 3,4 = other side.
+- Power nodes: "uno:5V", "vcc1:VCC", "pwr:VCC" — all mean +5V. Ground: "uno:GND", "gnd1:GND" — all mean 0V.
+- Arduino pins: "uno:2"–"uno:13" are digital, "uno:A0"–"uno:A5" are analog.
+- LED pins: A = anode (+), C = cathode (−). Resistor: 1 and 2 (no polarity). Button: 1,2 = one side, 3,4 = other side.
 
-## Proactive circuit analysis — MANDATORY when Circuit section is present
-Even if the student only asked a simple question, you MUST scan the full circuit and report every issue you find. Think through ALL of the following before answering:
+## DEEP CIRCUIT AUDIT — MANDATORY: enumerate EVERY component individually
+Go through each part in the diagram one by one. For each component check:
 
-### Complete current path
+### 1. Complete current path
 Every active component needs a closed loop: power source → component → GND.
 - Is there a path from a power pin (5V/VCC/3.3V) through the component to GND?
 - If one side is connected and the other is floating → the component will not work.
 
-### Floating inputs
+### 2. Floating inputs
 - Any pin declared INPUT (or not declared) with nothing connected will read random noise.
 - INPUT without a pull-up or pull-down resistor = unreliable behavior.
 - Flag: "pin X is floating — add a 10kΩ pull-down to GND or use INPUT_PULLUP."
 
-### Short circuits
+### 3. Short circuits
 - VCC connected to GND with no resistive component in between = short circuit → board damage.
 - Two OUTPUT pins wired directly together = output conflict → possible damage.
 
-### Component-specific rules
+### 4. Component-specific rules (check each one present in diagram)
 LED: needs series resistor (47Ω–1kΩ for 5V). Anode to power, cathode to GND.
 Resistor: check value makes sense for its role (current limiting, pull-up, voltage divider).
 Capacitor: electrolytic must be oriented correctly (+ toward higher voltage).
-Button: one side to signal pin, other side to GND or VCC — needs matching pull resistor.
+Button: one side to signal pin, other side to GND or VCC — needs a 10kΩ pull resistor.
 Transistor (NPN): base via resistor from signal, collector to load, emitter to GND.
 I2C devices: SDA→SDA, SCL→SCL, both lines need 4.7kΩ pull-up to VCC. Max 8 devices per bus.
 Servo: signal to PWM-capable pin, separate 5V/GND (not from Arduino 5V pin for >1 servo).
 Buzzer: active buzzer needs DC, passive needs PWM (tone()).
 
-### Code vs. diagram consistency
+### 5. Code vs. diagram consistency
 - Every pin used in code must appear in the diagram and vice versa.
 - pinMode(X, OUTPUT) then nothing connected to pin X = dead code.
 - analogRead() on a digital pin = always reads 0 or 1023, not analog.
 
-## Answer format when circuit issues are found
+## Answer format
 1. Answer the student's question first (1–2 sentences).
-2. Then list every other issue found in the circuit, grouped by severity:
+2. **Per-component audit** — list every component by its exact ID and state whether it is ✅ OK or has issues:
+3. Group all issues by severity:
    - ❌ Critical (will not work / can cause damage)
    - ⚠️ Warning (may work unreliably)
    - ℹ️ Info (best practice)
@@ -74,18 +100,36 @@ Buzzer: active buzzer needs DC, passive needs PWM (tone()).
 One sentence: what is wrong. One sentence: why it matters. One sentence: exact fix.
 `;
 
-// ── Circuit validation (JS port) ──────────────────────────────────────────
+// ── Circuit representation ─────────────────────────────────────────────────
+
+// Normalize duplicate GND/VCC pins: "uno:GND.1" → "uno:GND"
+// Strip display-only attrs (label etc.) that may contain Hebrew,
+// and strip layout/routing data — keep only circuit-relevant content.
 function slimDiagram(diagStr) {
   try {
     const d = JSON.parse(diagStr);
+    const SKIP_ATTRS = new Set(['label', 'top', 'left', 'rotate']);
     return JSON.stringify({
-      parts:       (d.parts || []).map(p => ({ id: p.id, type: p.type, attrs: p.attrs })),
-      connections: d.connections,
+      parts: (d.parts || []).map(p => {
+        const attrs = {};
+        for (const [k, v] of Object.entries(p.attrs || {})) {
+          if (!SKIP_ATTRS.has(k)) attrs[k] = v;
+        }
+        return { id: p.id, type: p.type, attrs };
+      }),
+      // Keep only the two endpoint pins — strip wire color and routing path
+      connections: (d.connections || []).map(c => [c[0], c[1]]),
     }, null, 2);
   } catch (_) { return diagStr; }
 }
 
-function validateCircuit(sketch, diagStr) {
+// ── Circuit validation (JS port) ──────────────────────────────────────────
+
+function isDeepRequest(question) {
+  return /check.*circuit|deep.?check|full.*check|audit.*circuit|בדוק.*מעגל|בדיקה.*מעגל|מעגל.*בדיקה|full.*audit/i.test(question);
+}
+
+function validateCircuit(sketch, diagStr, deepMode = false) {
   const findings = [];
   if (!sketch && !diagStr) return findings;
   let diagram;
@@ -207,29 +251,61 @@ function validateCircuit(sketch, diagStr) {
     const anodeReach   = reachable(anode);
     const cathodeReach = conn[cathode] ? reachable(cathode) : new Set();
     const hasGnd = [...cathodeReach].some(isGnd);
+    if (!conn[anode]) {
+      findings.push({ level: 'error', message: `${pid}: anode (A) is not connected — LED cannot light up` });
+    } else {
+      // Only check resistor if anode is actually connected
+      const resistorIds = [...anodeReach]
+        .map(n => n.split(':')[0])
+        .filter(id => parts[id]?.type?.toLowerCase().includes('resistor'));
+      if (!resistorIds.length) {
+        findings.push({ level: 'error', message: `${pid}: no current-limiting resistor — LED may burn out` });
+      } else {
+        for (const rid of resistorIds) {
+          const ohms = parseOhms(parts[rid]?.attrs?.value);
+          if (ohms !== null && ohms < 47)
+            findings.push({ level: 'error', message: `${rid}: resistance ${ohms}Ω is too low for ${pid} — LED may burn out (min ~47Ω at 5V)` });
+          else if (ohms !== null && ohms > 10000)
+            findings.push({ level: 'warning', message: `${rid}: resistance ${ohms}Ω is very high — ${pid} may be too dim or not light at all` });
+        }
+      }
+    }
     if (!conn[cathode])
       findings.push({ level: 'error',   message: `${pid}: cathode (C) is not connected` });
     else if (!hasGnd)
       findings.push({ level: 'warning', message: `${pid}: cathode does not reach GND` });
+  }
 
-    // Find resistor and check its value (search from anode side)
-    const resistorIds = [...anodeReach]
-      .map(n => n.split(':')[0])
-      .filter(id => parts[id]?.type?.toLowerCase().includes('resistor'));
-    if (!resistorIds.length) {
-      findings.push({ level: 'error', message: `${pid}: no current-limiting resistor — LED may burn out` });
-    } else {
-      for (const rid of resistorIds) {
-        const ohms = parseOhms(parts[rid]?.attrs?.value);
-        if (ohms !== null && ohms < 47)
-          findings.push({ level: 'error', message: `${rid}: resistance ${ohms}Ω is too low for ${pid} — LED may burn out (min ~47Ω at 5V)` });
-        else if (ohms !== null && ohms > 10000)
-          findings.push({ level: 'warning', message: `${rid}: resistance ${ohms}Ω is very high — ${pid} may be too dim or not light at all` });
-      }
+  // ── 6. Button checks (deep mode only) ────────────────────────────────────
+  if (deepMode) {
+    for (const [pid, part] of Object.entries(parts)) {
+      if (!/button|pushbutton/i.test(part.type || '')) continue;
+      const btnReach = reachable(`${pid}:1`);
+      const hasSignalPin = [...btnReach].some(n => /^uno:\d+$/.test(n));
+      const hasGndOrVcc  = [...btnReach].some(n => isGnd(n) || isVcc(n));
+      const pullNodes = [...btnReach].map(n => n.split(':')[0]).filter(id => parts[id]?.type?.toLowerCase().includes('resistor'));
+      if (!hasSignalPin)
+        findings.push({ level: 'warning', message: `${pid}: not connected to any Arduino pin` });
+      if (!pullNodes.length && hasSignalPin)
+        findings.push({ level: 'warning', message: `${pid}: no pull resistor detected — input will float (add 10kΩ to GND or use INPUT_PULLUP)` });
+    }
+
+    // ── 7. I2C pull-up check ────────────────────────────────────────────────
+    const sdaNodes = Object.keys(conn).filter(n => /SDA/i.test(n));
+    const sclNodes = Object.keys(conn).filter(n => /SCL/i.test(n));
+    if (sdaNodes.length || sclNodes.length) {
+      const i2cIds = new Set([...sdaNodes, ...sclNodes].map(n => n.split(':')[0]));
+      if (i2cIds.size > 8)
+        findings.push({ level: 'warning', message: `I2C bus has ${i2cIds.size} devices — max 8 supported` });
+      // Check for pull-up resistors on SDA/SCL lines
+      const sdaReach = sdaNodes.length ? reachable(sdaNodes[0]) : new Set();
+      const hasSdaPullup = [...sdaReach].map(n => n.split(':')[0]).some(id => parts[id]?.type?.toLowerCase().includes('resistor'));
+      if (!hasSdaPullup)
+        findings.push({ level: 'warning', message: 'I2C: no pull-up resistor detected on SDA/SCL — both lines need 4.7kΩ to VCC' });
     }
   }
 
-  // ── 6. delay() blocking ───────────────────────────────────────────────────
+  // ── 8. delay() blocking ───────────────────────────────────────────────────
   const delays = [...(sketch || '').matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(mm => parseInt(mm[1]));
   const maxDelay = delays.length ? Math.max(...delays) : 0;
   if (maxDelay >= 5000)
@@ -241,7 +317,7 @@ function validateCircuit(sketch, diagStr) {
 }
 
 // ── OpenRouter call ────────────────────────────────────────────────────────
-async function callOpenRouter(apiKey, model, userMessage) {
+async function callOpenRouter(apiKey, model, userMessage, systemPrompt = SYSTEM_PROMPT) {
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -253,8 +329,8 @@ async function callOpenRouter(apiKey, model, userMessage) {
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user',   content: userMessage   },
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userMessage  },
       ],
       max_tokens: 1500,
     }),
@@ -277,6 +353,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   (async () => {
     const { question, circuitContext, apiKey, model } = msg;
+    const deepMode = isDeepRequest(question);
     const parts = [question];
 
     if (circuitContext) {
@@ -301,8 +378,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (ctxParts.length)
         parts.push('=== Circuit ===\n' + ctxParts.join('\n---\n') + '\n=== End ===');
 
-      if (sketch && diagram) {
-        const findings = validateCircuit(sketch, diagram);
+      if (diagram) {
+        const findings = validateCircuit(sketch || '', diagram, deepMode);
         const critical = findings.filter(f => f.level !== 'info');
         if (critical.length) {
           const icons = { error: '❌', warning: '⚠️' };
@@ -316,7 +393,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
 
     try {
-      const { content, usage } = await callOpenRouter(apiKey, model, parts.join('\n\n'));
+      const prompt = deepMode ? DEEP_SYSTEM_PROMPT : SYSTEM_PROMPT;
+      const { content, usage } = await callOpenRouter(apiKey, model, parts.join('\n\n'), prompt);
       sendResponse({ answer: content, usage });
     } catch (e) {
       const msg = (e.name === 'TimeoutError' || e.name === 'AbortError')
